@@ -1,124 +1,123 @@
-struct Solution;
+use std::{
+    io::{self, stdout},
+    time::Duration,
+};
 
-impl Solution {
-    pub fn calculate_minimum_hp(dungeon: Vec<Vec<i32>>) -> i32 {
-        let rows = dungeon.len();
-        let cols = dungeon[0].len();
+use crossterm::{
+    event::{self, Event, KeyCode},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    ExecutableCommand,
+};
+use ratatui::{
+    prelude::*,
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
+};
 
-        let mut dp = vec![vec![i32::MAX; cols + 1]; rows + 1];
+use dungeon_game::Solution;
 
-        dp[rows][cols - 1] = 1;
-        dp[rows - 1][cols] = 1;
+struct App {
+    dungeon: Vec<Vec<i32>>,
+    path: Vec<(usize, usize)>,
+    current_step: usize,
+    current_hp: i32,
+    min_hp: i32,
+    running: bool,
+}
 
-        for i in (0..rows).rev() {
-            for j in (0..cols).rev() {
-                let min_next = dp[i + 1][j].min(dp[i][j + 1]);
-                let need = min_next - dungeon[i][j];
+impl App {
+    fn new() -> Self {
+        let dungeon = vec![vec![-2, -3, 3], vec![-5, -10, 1], vec![10, 30, -5]];
+        let (min_hp, path) = Solution::calculate_minimum_hp(dungeon.clone());
+        Self {
+            dungeon,
+            path,
+            current_step: 0,
+            current_hp: min_hp,
+            min_hp,
+            running: true,
+        }
+    }
 
-                // if need is negative, means that current room is healing, so we just need 1 hp
-                dp[i][j] = if need <= 0 { 1 } else { need };
+    fn tick(&mut self) {
+        if self.current_step < self.path.len() - 1 {
+            self.current_step += 1;
+            let (r, c) = self.path[self.current_step];
+            self.current_hp -= self.dungeon[r][c];
+        }
+    }
+}
+
+fn main() -> io::Result<()> {
+    // Setup terminal
+    enable_raw_mode()?;
+    stdout().execute(EnterAlternateScreen)?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+
+    let mut app = App::new();
+
+    while app.running {
+        terminal.draw(|f| ui(f, &app))?;
+
+        if event::poll(Duration::from_millis(500))? {
+            if let Event::Key(key) = event::read()? {
+                if key.code == KeyCode::Char('q') {
+                    app.running = false;
+                }
             }
         }
-
-        dp[0][0]
+        app.tick();
     }
+
+    // Restore terminal
+    disable_raw_mode()?;
+    stdout().execute(LeaveAlternateScreen)?;
+    Ok(())
 }
 
-fn main() {
-    let dungeon = vec![vec![-2, -3, 3], vec![-5, -10, 1], vec![10, 30, -5]];
-    let min_hp = Solution::calculate_minimum_hp(dungeon);
-    println!("Minimum initial health required: {}", min_hp);
-}
+fn ui(frame: &mut Frame, app: &App) {
+    let main_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
+        .split(frame.size());
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_calculate_minimum_hp() {
-        let dungeon = vec![vec![-2, -3, 3], vec![-5, -10, 1], vec![10, 30, -5]];
-        assert_eq!(Solution::calculate_minimum_hp(dungeon), 7);
+    let header_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(main_layout[1]);
+
+    frame.render_widget(
+        Paragraph::new(format!("Initial HP needed: {}", app.min_hp))
+            .block(Block::default().title("Game Info").borders(Borders::ALL)),
+        header_layout[0],
+    );
+    frame.render_widget(
+        Paragraph::new(format!("Current HP: {}", app.current_hp))
+            .block(Block::default().title("Player Stats").borders(Borders::ALL)),
+        header_layout[1],
+    );
+
+    let rows = app.dungeon.len();
+    let cols = app.dungeon[0].len();
+
+    let mut table_rows = Vec::new();
+    for r in 0..rows {
+        let mut cells = Vec::new();
+        for c in 0..cols {
+            let (pr, pc) = app.path[app.current_step];
+            let cell_text = format!("{}", app.dungeon[r][c]);
+            let mut cell = Cell::from(cell_text);
+            if r == pr && c == pc {
+                cell = cell.style(Style::default().bg(Color::Yellow).fg(Color::Black));
+            }
+            cells.push(cell);
+        }
+        table_rows.push(Row::new(cells).height(3));
     }
 
-    #[test]
-    fn test_single_positive_room() {
-        let dungeon = vec![vec![5]];
-        assert_eq!(Solution::calculate_minimum_hp(dungeon), 1);
-    }
+    let widths = (0..cols).map(|_| Constraint::Percentage(100 / cols as u16)).collect::<Vec<_>>();
+    let table = Table::new(table_rows, widths)
+        .block(Block::default().title("Dungeon").borders(Borders::ALL))
+        .column_spacing(1);
 
-    #[test]
-    fn test_single_negative_room() {
-        let dungeon = vec![vec![-5]];
-        assert_eq!(Solution::calculate_minimum_hp(dungeon), 6);
-    }
-
-    #[test]
-    fn test_all_negative() {
-        let dungeon = vec![vec![-2, -3], vec![-5, -10]];
-        assert_eq!(Solution::calculate_minimum_hp(dungeon), 16);
-    }
-
-    #[test]
-    fn test_all_positive() {
-        let dungeon = vec![vec![2, 3], vec![5, 10]];
-        assert_eq!(Solution::calculate_minimum_hp(dungeon), 1);
-    }
-
-    #[test]
-    fn test_mixed_small() {
-        let dungeon = vec![vec![0, -3], vec![-10, 1]];
-        assert_eq!(Solution::calculate_minimum_hp(dungeon), 4);
-    }
-
-    #[test]
-    fn test_large_mixed_dungeon() {
-        let dungeon = vec![
-            vec![-2, -3, 3, -1],
-            vec![-5, -10, 1, 30],
-            vec![10, 30, -5, -10],
-            vec![-1, -1, -1, -1],
-        ];
-        assert_eq!(Solution::calculate_minimum_hp(dungeon), 6);
-    }
-
-    #[test]
-    fn test_multiple_healing_rooms() {
-        let dungeon = vec![
-            vec![-2, 10, -3],
-            vec![-5, 20, -10],
-            vec![10, -30, -5],
-        ];
-        assert_eq!(Solution::calculate_minimum_hp(dungeon), 3);
-    }
-
-    #[test]
-    fn test_all_negative_except_end() {
-        let dungeon = vec![
-            vec![-2, -3, -3],
-            vec![-5, -10, -1],
-            vec![-10, -30, 100],
-        ];
-        assert_eq!(Solution::calculate_minimum_hp(dungeon), 10);
-    }
-
-    #[test]
-    fn test_large_negative_at_end() {
-        let dungeon = vec![
-            vec![0, 0, 0],
-            vec![1, 1, 1],
-            vec![2, 2, -100],
-        ];
-        assert_eq!(Solution::calculate_minimum_hp(dungeon), 96);
-    }
-
-    #[test]
-    fn test_single_row() {
-        let dungeon = vec![vec![-2, -3, 3, -1, 2]];
-        assert_eq!(Solution::calculate_minimum_hp(dungeon), 6);
-    }
-
-    #[test]
-    fn test_single_column() {
-        let dungeon = vec![vec![-2], vec![-3], vec![3], vec![-1], vec![2]];
-        assert_eq!(Solution::calculate_minimum_hp(dungeon), 6);
-    }
+    frame.render_widget(table, main_layout[0]);
 }
