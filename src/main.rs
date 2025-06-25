@@ -1,28 +1,4 @@
-struct Solution;
-
-impl Solution {
-    pub fn calculate_minimum_hp(dungeon: Vec<Vec<i32>>) -> i32 {
-        let rows = dungeon.len();
-        let cols = dungeon[0].len();
-
-        let mut dp = vec![vec![i32::MAX; cols + 1]; rows + 1];
-
-        dp[rows][cols - 1] = 1;
-        dp[rows - 1][cols] = 1;
-
-        for i in (0..rows).rev() {
-            for j in (0..cols).rev() {
-                let min_next = dp[i + 1][j].min(dp[i][j + 1]);
-                let need = min_next - dungeon[i][j];
-
-                // if need is negative, means that current room is healing, so we just need 1 hp
-                dp[i][j] = if need <= 0 { 1 } else { need };
-            }
-        }
-
-        dp[0][0]
-    }
-}
+use dungeon_game::Solution;
 
 fn main() {
     let dungeon = vec![vec![-2, -3, 3], vec![-5, -10, 1], vec![10, 30, -5]];
