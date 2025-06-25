@@ -11,3 +11,7 @@ path = "src/lib.rs"
 
 [dev-dependencies]
 criterion = "*"
+
+[[bench]]
+name = "bench_minimum_hp"
+harness = false
